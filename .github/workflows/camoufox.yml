@@ -1,0 +1,235 @@
+name: camoufox-readers
+
+on:
+  workflow_dispatch:
+    inputs:
+      article_url:
+        description: 'Target URL'
+        required: true
+        default: 'https://example.com'
+      readers:
+        description: 'Count'
+        required: false
+        default: '30'
+      concurrency:
+        description: 'Concurrency'
+        required: false
+        default: '20'
+      seconds:
+        description: 'Duration (s)'
+        required: false
+        default: '300'
+      traffic:
+        description: 'Source'
+        required: false
+        default: 'mix'
+      country:
+        description: 'Geo'
+        required: false
+        default: 'auto'
+      bounce_pct:
+        description: 'Rate'
+        required: false
+        default: '0.20'
+      block_images:
+        description: 'Opt'
+        required: false
+        default: '1'
+      hours:
+        description: 'Hours (0 = fast, 12 = 3 waves, 24 = 6 waves)'
+        required: false
+        default: '0'
+
+env:
+  DATAIMPULSE_LOGIN:           ${{ secrets.DATAIMPULSE_LOGIN }}
+  DATAIMPULSE_PASSWORD:        ${{ secrets.DATAIMPULSE_PASSWORD }}
+  DATAIMPULSE_MOBILE_LOGIN:    ${{ secrets.DATAIMPULSE_MOBILE_LOGIN }}
+  DATAIMPULSE_MOBILE_PASSWORD: ${{ secrets.DATAIMPULSE_MOBILE_PASSWORD }}
+  DATAIMPULSE_HOST:            ${{ secrets.DATAIMPULSE_HOST || 'gw.dataimpulse.com' }}
+  DATAIMPULSE_PORT:            ${{ secrets.DATAIMPULSE_PORT || '823' }}
+  DECODO_LOGIN:                ${{ secrets.DECODO_LOGIN }}
+  DECODO_PASSWORD:             ${{ secrets.DECODO_PASSWORD }}
+  APP_KEY:                     ${{ secrets.APP_KEY }}
+  TRAFFIC:                     ${{ inputs.traffic }}
+  COUNTRY:                     ${{ inputs.country }}
+  CONCURRENCY:                 ${{ inputs.concurrency }}
+  BOUNCE_PCT:                  ${{ inputs.bounce_pct }}
+  BLOCK_IMAGES:                ${{ inputs.block_images }}
+  TOTAL_READERS:               ${{ inputs.readers }}
+  TOTAL_HOURS:                 ${{ inputs.hours || '0' }}
+  HEADLESS:                    '1'
+
+jobs:
+  wait-active:
+    name: Queue Behind Active Run
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Wait for any earlier in-progress workflow run to finish
+        run: |
+          CUR_ID="${{ github.run_id }}"
+          while true; do
+            ACTIVE=$(curl -s "https://api.github.com/repos/${{ github.repository }}/actions/runs?status=in_progress&per_page=20" | python3 -c "import sys,json; cur=int('$CUR_ID'); d=json.load(sys.stdin); o=[r['id'] for r in d.get('workflow_runs',[]) if int(r['id'])<cur]; print(o[0] if o else '')" 2>/dev/null || true)
+            if [ -z "$ACTIVE" ]; then
+              echo "No earlier run in progress. Starting campaign now."
+              break
+            fi
+            echo "Waiting for earlier run #$ACTIVE to finish..."
+            sleep 60
+          done
+
+  wave-1:
+    name: Wave 1
+    needs: wait-active
+    if: ${{ always() && !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm install
+      - run: npx playwright-core install-deps firefox
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/camoufox
+          key: camoufox-binary-${{ runner.os }}-v1
+      - run: test -f ~/.cache/camoufox/version.json || npx camoufox-js fetch
+      - name: Run Wave 1
+        run: |
+          chmod +x run-camoufox.sh
+          read W_READERS W_MINS < <(python3 -c "import math; r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; i=1; print(max(1,(r//w)+(1 if i<=(r%w) else 0)), int(round((h/w)*60)) if h>0 else 0)")
+          echo "Wave 1: running $W_READERS readers over $W_MINS minutes"
+          SPREAD_MINUTES="$W_MINS" ./run-camoufox.sh "${{ inputs.article_url }}" "$W_READERS" "${{ inputs.seconds }}"
+
+  wave-2:
+    name: Wave 2
+    needs: wave-1
+    if: ${{ always() && !cancelled() && fromJSON(inputs.hours || '0') > 4 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm install
+      - run: npx playwright-core install-deps firefox
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/camoufox
+          key: camoufox-binary-${{ runner.os }}-v1
+      - run: test -f ~/.cache/camoufox/version.json || npx camoufox-js fetch
+      - name: Run Wave 2
+        run: |
+          chmod +x run-camoufox.sh
+          read W_READERS W_MINS < <(python3 -c "import math; r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; i=2; print(max(1,(r//w)+(1 if i<=(r%w) else 0)), int(round((h/w)*60)) if h>0 else 0)")
+          echo "Wave 2: running $W_READERS readers over $W_MINS minutes"
+          SPREAD_MINUTES="$W_MINS" ./run-camoufox.sh "${{ inputs.article_url }}" "$W_READERS" "${{ inputs.seconds }}"
+
+  wave-3:
+    name: Wave 3
+    needs: wave-2
+    if: ${{ always() && !cancelled() && fromJSON(inputs.hours || '0') > 8 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm install
+      - run: npx playwright-core install-deps firefox
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/camoufox
+          key: camoufox-binary-${{ runner.os }}-v1
+      - run: test -f ~/.cache/camoufox/version.json || npx camoufox-js fetch
+      - name: Run Wave 3
+        run: |
+          chmod +x run-camoufox.sh
+          read W_READERS W_MINS < <(python3 -c "import math; r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; i=3; print(max(1,(r//w)+(1 if i<=(r%w) else 0)), int(round((h/w)*60)) if h>0 else 0)")
+          echo "Wave 3: running $W_READERS readers over $W_MINS minutes"
+          SPREAD_MINUTES="$W_MINS" ./run-camoufox.sh "${{ inputs.article_url }}" "$W_READERS" "${{ inputs.seconds }}"
+
+  wave-4:
+    name: Wave 4
+    needs: wave-3
+    if: ${{ always() && !cancelled() && fromJSON(inputs.hours || '0') > 12 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm install
+      - run: npx playwright-core install-deps firefox
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/camoufox
+          key: camoufox-binary-${{ runner.os }}-v1
+      - run: test -f ~/.cache/camoufox/version.json || npx camoufox-js fetch
+      - name: Run Wave 4
+        run: |
+          chmod +x run-camoufox.sh
+          read W_READERS W_MINS < <(python3 -c "import math; r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; i=4; print(max(1,(r//w)+(1 if i<=(r%w) else 0)), int(round((h/w)*60)) if h>0 else 0)")
+          echo "Wave 4: running $W_READERS readers over $W_MINS minutes"
+          SPREAD_MINUTES="$W_MINS" ./run-camoufox.sh "${{ inputs.article_url }}" "$W_READERS" "${{ inputs.seconds }}"
+
+  wave-5:
+    name: Wave 5
+    needs: wave-4
+    if: ${{ always() && !cancelled() && fromJSON(inputs.hours || '0') > 16 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm install
+      - run: npx playwright-core install-deps firefox
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/camoufox
+          key: camoufox-binary-${{ runner.os }}-v1
+      - run: test -f ~/.cache/camoufox/version.json || npx camoufox-js fetch
+      - name: Run Wave 5
+        run: |
+          chmod +x run-camoufox.sh
+          read W_READERS W_MINS < <(python3 -c "import math; r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; i=5; print(max(1,(r//w)+(1 if i<=(r%w) else 0)), int(round((h/w)*60)) if h>0 else 0)")
+          echo "Wave 5: running $W_READERS readers over $W_MINS minutes"
+          SPREAD_MINUTES="$W_MINS" ./run-camoufox.sh "${{ inputs.article_url }}" "$W_READERS" "${{ inputs.seconds }}"
+
+  wave-6:
+    name: Wave 6
+    needs: wave-5
+    if: ${{ always() && !cancelled() && fromJSON(inputs.hours || '0') > 20 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm install
+      - run: npx playwright-core install-deps firefox
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/camoufox
+          key: camoufox-binary-${{ runner.os }}-v1
+      - run: test -f ~/.cache/camoufox/version.json || npx camoufox-js fetch
+      - name: Run Wave 6
+        run: |
+          chmod +x run-camoufox.sh
+          read W_READERS W_MINS < <(python3 -c "import math; r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; i=6; print(max(1,(r//w)+(1 if i<=(r%w) else 0)), int(round((h/w)*60)) if h>0 else 0)")
+          echo "Wave 6: running $W_READERS readers over $W_MINS minutes"
+          SPREAD_MINUTES="$W_MINS" ./run-camoufox.sh "${{ inputs.article_url }}" "$W_READERS" "${{ inputs.seconds }}"

@@ -1,0 +1,7 @@
+node_modules/
+screenshot-*.png
+recordings/
+.DS_Store
+reader.js
+README.md
+.rt.js
