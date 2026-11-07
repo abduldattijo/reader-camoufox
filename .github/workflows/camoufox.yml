@@ -68,15 +68,18 @@ jobs:
       - name: Wait for any earlier in-progress workflow run to finish
         run: |
           CUR_ID="${{ github.run_id }}"
-          while true; do
+          WAITED=0
+          while [ "$WAITED" -lt 350 ]; do
             ACTIVE=$(curl -s "https://api.github.com/repos/${{ github.repository }}/actions/runs?status=in_progress&per_page=20" | python3 -c "import sys,json; cur=int('$CUR_ID'); d=json.load(sys.stdin); o=[r['id'] for r in d.get('workflow_runs',[]) if int(r['id'])<cur]; print(o[0] if o else '')" 2>/dev/null || true)
             if [ -z "$ACTIVE" ]; then
               echo "No earlier run in progress. Starting campaign now."
               break
             fi
-            echo "Waiting for earlier run #$ACTIVE to finish..."
+            echo "Waiting for earlier run #$ACTIVE to finish ($WAITED/350m)..."
             sleep 60
+            WAITED=$((WAITED + 1))
           done
+          echo "Proceeding to Wave 1."
 
   wave-1:
     name: Wave 1
@@ -210,7 +213,7 @@ jobs:
 
   wave-6:
     name: Wave 6
-    needs: wave-5
+    needs: [wave-1, wave-2, wave-3, wave-4, wave-5]
     if: ${{ always() && !cancelled() && fromJSON(inputs.hours || '0') > 20 }}
     runs-on: ubuntu-latest
     timeout-minutes: 330
@@ -227,9 +230,10 @@ jobs:
           path: ~/.cache/camoufox
           key: camoufox-binary-${{ runner.os }}-v1
       - run: test -f ~/.cache/camoufox/version.json || npx camoufox-js fetch
-      - name: Run Wave 6
+      - name: Run Wave 6 (with automatic catch-up for any skipped waves)
         run: |
           chmod +x run-camoufox.sh
-          read W_READERS W_MINS < <(python3 -c "import math; r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; i=6; print(max(1,(r//w)+(1 if i<=(r%w) else 0)), int(round((h/w)*60)) if h>0 else 0)")
-          echo "Wave 6: running $W_READERS readers over $W_MINS minutes"
+          RESULTS="${{ needs.wave-1.result }},${{ needs.wave-2.result }},${{ needs.wave-3.result }},${{ needs.wave-4.result }},${{ needs.wave-5.result }}"
+          read W_READERS W_MINS < <(python3 -c "import math; r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; res='$RESULTS'.split(','); missed=sum(max(1,(r//w)+(1 if idx+1<=(r%w) else 0)) for idx,st in enumerate(res[:w-1]) if st!='success'); base=max(1,(r//w)+(1 if 6<=(r%w) else 0)); print(base+missed, int(round((h/w)*60)) if h>0 else 0)")
+          echo "Wave 6: running $W_READERS readers over $W_MINS minutes (earlier results: $RESULTS)"
           SPREAD_MINUTES="$W_MINS" ./run-camoufox.sh "${{ inputs.article_url }}" "$W_READERS" "${{ inputs.seconds }}"
