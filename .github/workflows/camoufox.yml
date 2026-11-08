@@ -99,7 +99,7 @@ jobs:
         with:
           path: ~/.cache/camoufox
           key: camoufox-binary-${{ runner.os }}-v1
-      - run: test -f ~/.cache/camoufox/version.json || npx camoufox-js fetch
+      - run: for a in 1 2 3 4 5; do test -f ~/.cache/camoufox/version.json && break; npx camoufox-js fetch && break; rm -rf ~/.cache/camoufox; sleep 15; done
       - name: Run Wave 1
         run: |
           chmod +x run-camoufox.sh
@@ -125,7 +125,7 @@ jobs:
         with:
           path: ~/.cache/camoufox
           key: camoufox-binary-${{ runner.os }}-v1
-      - run: test -f ~/.cache/camoufox/version.json || npx camoufox-js fetch
+      - run: for a in 1 2 3 4 5; do test -f ~/.cache/camoufox/version.json && break; npx camoufox-js fetch && break; rm -rf ~/.cache/camoufox; sleep 15; done
       - name: Run Wave 2
         run: |
           chmod +x run-camoufox.sh
@@ -151,7 +151,7 @@ jobs:
         with:
           path: ~/.cache/camoufox
           key: camoufox-binary-${{ runner.os }}-v1
-      - run: test -f ~/.cache/camoufox/version.json || npx camoufox-js fetch
+      - run: for a in 1 2 3 4 5; do test -f ~/.cache/camoufox/version.json && break; npx camoufox-js fetch && break; rm -rf ~/.cache/camoufox; sleep 15; done
       - name: Run Wave 3
         run: |
           chmod +x run-camoufox.sh
@@ -177,7 +177,7 @@ jobs:
         with:
           path: ~/.cache/camoufox
           key: camoufox-binary-${{ runner.os }}-v1
-      - run: test -f ~/.cache/camoufox/version.json || npx camoufox-js fetch
+      - run: for a in 1 2 3 4 5; do test -f ~/.cache/camoufox/version.json && break; npx camoufox-js fetch && break; rm -rf ~/.cache/camoufox; sleep 15; done
       - name: Run Wave 4
         run: |
           chmod +x run-camoufox.sh
@@ -203,7 +203,7 @@ jobs:
         with:
           path: ~/.cache/camoufox
           key: camoufox-binary-${{ runner.os }}-v1
-      - run: test -f ~/.cache/camoufox/version.json || npx camoufox-js fetch
+      - run: for a in 1 2 3 4 5; do test -f ~/.cache/camoufox/version.json && break; npx camoufox-js fetch && break; rm -rf ~/.cache/camoufox; sleep 15; done
       - name: Run Wave 5
         run: |
           chmod +x run-camoufox.sh
@@ -229,7 +229,7 @@ jobs:
         with:
           path: ~/.cache/camoufox
           key: camoufox-binary-${{ runner.os }}-v1
-      - run: test -f ~/.cache/camoufox/version.json || npx camoufox-js fetch
+      - run: for a in 1 2 3 4 5; do test -f ~/.cache/camoufox/version.json && break; npx camoufox-js fetch && break; rm -rf ~/.cache/camoufox; sleep 15; done
       - name: Run Wave 6 (with automatic catch-up for any skipped waves)
         run: |
           chmod +x run-camoufox.sh
