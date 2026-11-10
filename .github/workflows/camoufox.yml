@@ -61,11 +61,33 @@ env:
 
 jobs:
   wait-active:
-    name: Queue Behind Active Run
+    name: Queue Behind Active Run (Stage 1)
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
       - name: Wait for any earlier in-progress workflow run to finish
+        run: |
+          CUR_ID="${{ github.run_id }}"
+          WAITED=0
+          while [ "$WAITED" -lt 350 ]; do
+            ACTIVE=$(curl -s "https://api.github.com/repos/${{ github.repository }}/actions/runs?status=in_progress&per_page=20" | python3 -c "import sys,json; cur=int('$CUR_ID'); d=json.load(sys.stdin); o=[r['id'] for r in d.get('workflow_runs',[]) if int(r['id'])<cur]; print(o[0] if o else '')" 2>/dev/null || true)
+            if [ -z "$ACTIVE" ]; then
+              echo "No earlier run in progress. Proceeding."
+              break
+            fi
+            echo "Waiting for earlier run #$ACTIVE to finish ($WAITED/350m)..."
+            sleep 60
+            WAITED=$((WAITED + 1))
+          done
+
+  wait-active-2:
+    name: Queue Behind Active Run (Stage 2)
+    needs: wait-active
+    if: ${{ always() && !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Continue waiting if earlier run is still in progress
         run: |
           CUR_ID="${{ github.run_id }}"
           WAITED=0
@@ -79,11 +101,10 @@ jobs:
             sleep 60
             WAITED=$((WAITED + 1))
           done
-          echo "Proceeding to Wave 1."
 
   wave-1:
     name: Wave 1
-    needs: wait-active
+    needs: wait-active-2
     if: ${{ always() && !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 330
