@@ -115,7 +115,7 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm install
-      - run: npx playwright-core install-deps firefox
+      - run: for a in 1 2 3 4; do npx playwright-core install-deps firefox && break; sudo apt-get update -y || true; sleep 15; done
       - uses: actions/cache@v4
         with:
           path: ~/.cache/camoufox
@@ -124,7 +124,7 @@ jobs:
       - name: Run Wave 1
         run: |
           chmod +x run-camoufox.sh
-          read W_READERS W_MINS < <(python3 -c "import math; r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; i=1; print(max(1,(r//w)+(1 if i<=(r%w) else 0)), int(round((h/w)*60)) if h>0 else 0)")
+          read W_READERS W_MINS < <(python3 -c "import math,random; rng=random.Random(int('${{ github.run_id }}')); r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; raw=[rng.uniform(0.58,1.48) for _ in range(w)]; s=sum(raw); cnts=[max(1,int(round(r*x/s))+rng.choice([-4,-3,-2,-1,1,2,3,4])) for x in raw]; base_m=int(round((h/w)*60)) if h>0 else 0; mins=[max(10,base_m+rng.randint(-15,14)) if base_m>30 else base_m for _ in range(w)]; print(cnts[0], mins[0])")
           echo "Wave 1: running $W_READERS readers over $W_MINS minutes"
           SPREAD_MINUTES="$W_MINS" ./run-camoufox.sh "${{ inputs.article_url }}" "$W_READERS" "${{ inputs.seconds }}"
 
@@ -141,7 +141,7 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm install
-      - run: npx playwright-core install-deps firefox
+      - run: for a in 1 2 3 4; do npx playwright-core install-deps firefox && break; sudo apt-get update -y || true; sleep 15; done
       - uses: actions/cache@v4
         with:
           path: ~/.cache/camoufox
@@ -150,13 +150,13 @@ jobs:
       - name: Run Wave 2
         run: |
           chmod +x run-camoufox.sh
-          read W_READERS W_MINS < <(python3 -c "import math; r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; i=2; print(max(1,(r//w)+(1 if i<=(r%w) else 0)), int(round((h/w)*60)) if h>0 else 0)")
+          read W_READERS W_MINS < <(python3 -c "import math,random; rng=random.Random(int('${{ github.run_id }}')); r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; raw=[rng.uniform(0.58,1.48) for _ in range(w)]; s=sum(raw); cnts=[max(1,int(round(r*x/s))+rng.choice([-4,-3,-2,-1,1,2,3,4])) for x in raw]; base_m=int(round((h/w)*60)) if h>0 else 0; mins=[max(10,base_m+rng.randint(-15,14)) if base_m>30 else base_m for _ in range(w)]; print(cnts[1], mins[1])")
           echo "Wave 2: running $W_READERS readers over $W_MINS minutes"
           SPREAD_MINUTES="$W_MINS" ./run-camoufox.sh "${{ inputs.article_url }}" "$W_READERS" "${{ inputs.seconds }}"
 
   wave-3:
     name: Wave 3
-    needs: wave-2
+    needs: [wave-1, wave-2]
     if: ${{ always() && !cancelled() && fromJSON(inputs.hours || '0') > 8 }}
     runs-on: ubuntu-latest
     timeout-minutes: 330
@@ -167,7 +167,7 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm install
-      - run: npx playwright-core install-deps firefox
+      - run: for a in 1 2 3 4; do npx playwright-core install-deps firefox && break; sudo apt-get update -y || true; sleep 15; done
       - uses: actions/cache@v4
         with:
           path: ~/.cache/camoufox
@@ -176,7 +176,8 @@ jobs:
       - name: Run Wave 3
         run: |
           chmod +x run-camoufox.sh
-          read W_READERS W_MINS < <(python3 -c "import math; r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; i=3; print(max(1,(r//w)+(1 if i<=(r%w) else 0)), int(round((h/w)*60)) if h>0 else 0)")
+          RESULTS="${{ needs.wave-1.result }},${{ needs.wave-2.result }}"
+          read W_READERS W_MINS < <(python3 -c "import math,random; rng=random.Random(int('${{ github.run_id }}')); r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; raw=[rng.uniform(0.58,1.48) for _ in range(w)]; s=sum(raw); cnts=[max(1,int(round(r*x/s))+rng.choice([-4,-3,-2,-1,1,2,3,4])) for x in raw]; base_m=int(round((h/w)*60)) if h>0 else 0; mins=[max(10,base_m+rng.randint(-15,14)) if base_m>30 else base_m for _ in range(w)]; res='$RESULTS'.split(','); missed=sum(cnts[idx] for idx,st in enumerate(res[:2]) if st!='success') if w==3 else 0; print(cnts[2]+missed, mins[2])")
           echo "Wave 3: running $W_READERS readers over $W_MINS minutes"
           SPREAD_MINUTES="$W_MINS" ./run-camoufox.sh "${{ inputs.article_url }}" "$W_READERS" "${{ inputs.seconds }}"
 
@@ -193,7 +194,7 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm install
-      - run: npx playwright-core install-deps firefox
+      - run: for a in 1 2 3 4; do npx playwright-core install-deps firefox && break; sudo apt-get update -y || true; sleep 15; done
       - uses: actions/cache@v4
         with:
           path: ~/.cache/camoufox
@@ -202,7 +203,7 @@ jobs:
       - name: Run Wave 4
         run: |
           chmod +x run-camoufox.sh
-          read W_READERS W_MINS < <(python3 -c "import math; r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; i=4; print(max(1,(r//w)+(1 if i<=(r%w) else 0)), int(round((h/w)*60)) if h>0 else 0)")
+          read W_READERS W_MINS < <(python3 -c "import math,random; rng=random.Random(int('${{ github.run_id }}')); r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; raw=[rng.uniform(0.58,1.48) for _ in range(w)]; s=sum(raw); cnts=[max(1,int(round(r*x/s))+rng.choice([-4,-3,-2,-1,1,2,3,4])) for x in raw]; base_m=int(round((h/w)*60)) if h>0 else 0; mins=[max(10,base_m+rng.randint(-15,14)) if base_m>30 else base_m for _ in range(w)]; print(cnts[3], mins[3])")
           echo "Wave 4: running $W_READERS readers over $W_MINS minutes"
           SPREAD_MINUTES="$W_MINS" ./run-camoufox.sh "${{ inputs.article_url }}" "$W_READERS" "${{ inputs.seconds }}"
 
@@ -219,7 +220,7 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm install
-      - run: npx playwright-core install-deps firefox
+      - run: for a in 1 2 3 4; do npx playwright-core install-deps firefox && break; sudo apt-get update -y || true; sleep 15; done
       - uses: actions/cache@v4
         with:
           path: ~/.cache/camoufox
@@ -228,7 +229,7 @@ jobs:
       - name: Run Wave 5
         run: |
           chmod +x run-camoufox.sh
-          read W_READERS W_MINS < <(python3 -c "import math; r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; i=5; print(max(1,(r//w)+(1 if i<=(r%w) else 0)), int(round((h/w)*60)) if h>0 else 0)")
+          read W_READERS W_MINS < <(python3 -c "import math,random; rng=random.Random(int('${{ github.run_id }}')); r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; raw=[rng.uniform(0.58,1.48) for _ in range(w)]; s=sum(raw); cnts=[max(1,int(round(r*x/s))+rng.choice([-4,-3,-2,-1,1,2,3,4])) for x in raw]; base_m=int(round((h/w)*60)) if h>0 else 0; mins=[max(10,base_m+rng.randint(-15,14)) if base_m>30 else base_m for _ in range(w)]; print(cnts[4], mins[4])")
           echo "Wave 5: running $W_READERS readers over $W_MINS minutes"
           SPREAD_MINUTES="$W_MINS" ./run-camoufox.sh "${{ inputs.article_url }}" "$W_READERS" "${{ inputs.seconds }}"
 
@@ -245,7 +246,7 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm install
-      - run: npx playwright-core install-deps firefox
+      - run: for a in 1 2 3 4; do npx playwright-core install-deps firefox && break; sudo apt-get update -y || true; sleep 15; done
       - uses: actions/cache@v4
         with:
           path: ~/.cache/camoufox
@@ -255,6 +256,6 @@ jobs:
         run: |
           chmod +x run-camoufox.sh
           RESULTS="${{ needs.wave-1.result }},${{ needs.wave-2.result }},${{ needs.wave-3.result }},${{ needs.wave-4.result }},${{ needs.wave-5.result }}"
-          read W_READERS W_MINS < <(python3 -c "import math; r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; res='$RESULTS'.split(','); missed=sum(max(1,(r//w)+(1 if idx+1<=(r%w) else 0)) for idx,st in enumerate(res[:w-1]) if st!='success'); base=max(1,(r//w)+(1 if 6<=(r%w) else 0)); print(base+missed, int(round((h/w)*60)) if h>0 else 0)")
+          read W_READERS W_MINS < <(python3 -c "import math,random; rng=random.Random(int('${{ github.run_id }}')); r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; raw=[rng.uniform(0.58,1.48) for _ in range(w)]; s=sum(raw); cnts=[max(1,int(round(r*x/s))+rng.choice([-4,-3,-2,-1,1,2,3,4])) for x in raw]; base_m=int(round((h/w)*60)) if h>0 else 0; mins=[max(10,base_m+rng.randint(-15,14)) if base_m>30 else base_m for _ in range(w)]; res='$RESULTS'.split(','); missed=sum(cnts[idx] for idx,st in enumerate(res[:w-1]) if st!='success'); print(cnts[5]+missed, mins[5])")
           echo "Wave 6: running $W_READERS readers over $W_MINS minutes (earlier results: $RESULTS)"
           SPREAD_MINUTES="$W_MINS" ./run-camoufox.sh "${{ inputs.article_url }}" "$W_READERS" "${{ inputs.seconds }}"
