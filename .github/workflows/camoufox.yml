@@ -1,4 +1,5 @@
 name: camoufox-readers
+run-name: "camoufox [${{ inputs.article_url }}] (days left: ${{ inputs.days || '1' }})"
 
 on:
   workflow_dispatch:
@@ -8,7 +9,7 @@ on:
         required: true
         default: 'https://example.com'
       readers:
-        description: 'Count'
+        description: 'Count (total across all days)'
         required: false
         default: '30'
       concurrency:
@@ -36,9 +37,13 @@ on:
         required: false
         default: '1'
       hours:
-        description: 'Hours (0 = fast, 12 = 3 waves, 24 = 6 waves)'
+        description: 'Hours per day (0 = fast, 12 = 3 waves, 24 = 6 waves)'
         required: false
         default: '0'
+      days:
+        description: 'Days (1 = single day, 2..14 = auto-chained multi-day campaign)'
+        required: false
+        default: '1'
 
 env:
   DATAIMPULSE_LOGIN:           ${{ secrets.DATAIMPULSE_LOGIN }}
@@ -57,6 +62,7 @@ env:
   BLOCK_IMAGES:                ${{ inputs.block_images }}
   TOTAL_READERS:               ${{ inputs.readers }}
   TOTAL_HOURS:                 ${{ inputs.hours || '0' }}
+  TOTAL_DAYS:                  ${{ inputs.days || '1' }}
   HEADLESS:                    '1'
 
 jobs:
@@ -65,14 +71,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
-      - name: Wait for any earlier in-progress workflow run to finish
+      - name: Wait for any earlier in-progress workflow run for this article to finish
         run: |
           CUR_ID="${{ github.run_id }}"
           WAITED=0
           while [ "$WAITED" -lt 350 ]; do
-            ACTIVE=$(curl -s "https://api.github.com/repos/${{ github.repository }}/actions/runs?status=in_progress&per_page=20" | python3 -c "import sys,json; cur=int('$CUR_ID'); d=json.load(sys.stdin); o=[r['id'] for r in d.get('workflow_runs',[]) if int(r['id'])<cur]; print(o[0] if o else '')" 2>/dev/null || true)
+            ACTIVE=$(curl -s "https://api.github.com/repos/${{ github.repository }}/actions/runs?status=in_progress&per_page=20" | python3 -c "import sys,json; cur=int('$CUR_ID'); url='${{ inputs.article_url }}'.rstrip('/'); d=json.load(sys.stdin); earlier=[r for r in d.get('workflow_runs',[]) if int(r['id'])<cur]; same=[r['id'] for r in earlier if r.get('display_title','')=='camoufox-readers' or (url and url in r.get('display_title',''))]; busy=[r['id'] for r in earlier] if len(earlier)>=3 else []; b=same or busy; print(b[0] if b else '')" 2>/dev/null || true)
             if [ -z "$ACTIVE" ]; then
-              echo "No earlier run in progress. Proceeding."
+              echo "No conflicting run in progress. Proceeding."
               break
             fi
             echo "Waiting for earlier run #$ACTIVE to finish ($WAITED/350m)..."
@@ -87,14 +93,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
-      - name: Continue waiting if earlier run is still in progress
+      - name: Continue waiting if earlier run for this article is still in progress
         run: |
           CUR_ID="${{ github.run_id }}"
           WAITED=0
           while [ "$WAITED" -lt 350 ]; do
-            ACTIVE=$(curl -s "https://api.github.com/repos/${{ github.repository }}/actions/runs?status=in_progress&per_page=20" | python3 -c "import sys,json; cur=int('$CUR_ID'); d=json.load(sys.stdin); o=[r['id'] for r in d.get('workflow_runs',[]) if int(r['id'])<cur]; print(o[0] if o else '')" 2>/dev/null || true)
+            ACTIVE=$(curl -s "https://api.github.com/repos/${{ github.repository }}/actions/runs?status=in_progress&per_page=20" | python3 -c "import sys,json; cur=int('$CUR_ID'); url='${{ inputs.article_url }}'.rstrip('/'); d=json.load(sys.stdin); earlier=[r for r in d.get('workflow_runs',[]) if int(r['id'])<cur]; same=[r['id'] for r in earlier if r.get('display_title','')=='camoufox-readers' or (url and url in r.get('display_title',''))]; busy=[r['id'] for r in earlier] if len(earlier)>=3 else []; b=same or busy; print(b[0] if b else '')" 2>/dev/null || true)
             if [ -z "$ACTIVE" ]; then
-              echo "No earlier run in progress. Starting campaign now."
+              echo "No conflicting run in progress. Starting campaign now."
               break
             fi
             echo "Waiting for earlier run #$ACTIVE to finish ($WAITED/350m)..."
@@ -124,8 +130,8 @@ jobs:
       - name: Run Wave 1
         run: |
           chmod +x run-camoufox.sh
-          read W_READERS W_MINS < <(python3 -c "import math,random; rng=random.Random(int('${{ github.run_id }}')); r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; raw=[rng.uniform(0.58,1.48) for _ in range(w)]; s=sum(raw); cnts=[max(1,int(round(r*x/s))+rng.choice([-4,-3,-2,-1,1,2,3,4])) for x in raw]; base_m=int(round((h/w)*60)) if h>0 else 0; mins=[max(10,base_m+rng.randint(-15,14)) if base_m>30 else base_m for _ in range(w)]; print(cnts[0], mins[0])")
-          echo "Wave 1: running $W_READERS readers over $W_MINS minutes"
+          read W_READERS W_MINS < <(python3 -c "import math,random; rng=random.Random(int('${{ github.run_id }}')); tot_r=max(1,int('${TOTAL_READERS:-30}')); d=max(1,int(float('${TOTAL_DAYS:-1}'))); r=max(1,min(tot_r-(d-1),int(round((tot_r/d)*rng.uniform(0.76,1.28)))+rng.choice([-3,-2,-1,1,2,3]))) if d>1 else tot_r; h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; raw=[rng.uniform(0.58,1.48) for _ in range(w)]; s=sum(raw); cnts=[max(1,int(round(r*x/s))+rng.choice([-4,-3,-2,-1,1,2,3,4])) for x in raw]; base_m=int(round((h/w)*60)) if h>0 else 0; mins=[max(10,base_m+rng.randint(-15,14)) if base_m>30 else base_m for _ in range(w)]; print(cnts[0], mins[0])")
+          echo "Wave 1: running $W_READERS readers over $W_MINS minutes (days left: ${TOTAL_DAYS:-1})"
           SPREAD_MINUTES="$W_MINS" ./run-camoufox.sh "${{ inputs.article_url }}" "$W_READERS" "${{ inputs.seconds }}"
 
   wave-2:
@@ -150,8 +156,8 @@ jobs:
       - name: Run Wave 2
         run: |
           chmod +x run-camoufox.sh
-          read W_READERS W_MINS < <(python3 -c "import math,random; rng=random.Random(int('${{ github.run_id }}')); r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; raw=[rng.uniform(0.58,1.48) for _ in range(w)]; s=sum(raw); cnts=[max(1,int(round(r*x/s))+rng.choice([-4,-3,-2,-1,1,2,3,4])) for x in raw]; base_m=int(round((h/w)*60)) if h>0 else 0; mins=[max(10,base_m+rng.randint(-15,14)) if base_m>30 else base_m for _ in range(w)]; print(cnts[1], mins[1])")
-          echo "Wave 2: running $W_READERS readers over $W_MINS minutes"
+          read W_READERS W_MINS < <(python3 -c "import math,random; rng=random.Random(int('${{ github.run_id }}')); tot_r=max(1,int('${TOTAL_READERS:-30}')); d=max(1,int(float('${TOTAL_DAYS:-1}'))); r=max(1,min(tot_r-(d-1),int(round((tot_r/d)*rng.uniform(0.76,1.28)))+rng.choice([-3,-2,-1,1,2,3]))) if d>1 else tot_r; h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; raw=[rng.uniform(0.58,1.48) for _ in range(w)]; s=sum(raw); cnts=[max(1,int(round(r*x/s))+rng.choice([-4,-3,-2,-1,1,2,3,4])) for x in raw]; base_m=int(round((h/w)*60)) if h>0 else 0; mins=[max(10,base_m+rng.randint(-15,14)) if base_m>30 else base_m for _ in range(w)]; print(cnts[1], mins[1])")
+          echo "Wave 2: running $W_READERS readers over $W_MINS minutes (days left: ${TOTAL_DAYS:-1})"
           SPREAD_MINUTES="$W_MINS" ./run-camoufox.sh "${{ inputs.article_url }}" "$W_READERS" "${{ inputs.seconds }}"
 
   wave-3:
@@ -177,8 +183,8 @@ jobs:
         run: |
           chmod +x run-camoufox.sh
           RESULTS="${{ needs.wave-1.result }},${{ needs.wave-2.result }}"
-          read W_READERS W_MINS < <(python3 -c "import math,random; rng=random.Random(int('${{ github.run_id }}')); r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; raw=[rng.uniform(0.58,1.48) for _ in range(w)]; s=sum(raw); cnts=[max(1,int(round(r*x/s))+rng.choice([-4,-3,-2,-1,1,2,3,4])) for x in raw]; base_m=int(round((h/w)*60)) if h>0 else 0; mins=[max(10,base_m+rng.randint(-15,14)) if base_m>30 else base_m for _ in range(w)]; res='$RESULTS'.split(','); missed=sum(cnts[idx] for idx,st in enumerate(res[:2]) if st!='success') if w==3 else 0; print(cnts[2]+missed, mins[2])")
-          echo "Wave 3: running $W_READERS readers over $W_MINS minutes"
+          read W_READERS W_MINS < <(python3 -c "import math,random; rng=random.Random(int('${{ github.run_id }}')); tot_r=max(1,int('${TOTAL_READERS:-30}')); d=max(1,int(float('${TOTAL_DAYS:-1}'))); r=max(1,min(tot_r-(d-1),int(round((tot_r/d)*rng.uniform(0.76,1.28)))+rng.choice([-3,-2,-1,1,2,3]))) if d>1 else tot_r; h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; raw=[rng.uniform(0.58,1.48) for _ in range(w)]; s=sum(raw); cnts=[max(1,int(round(r*x/s))+rng.choice([-4,-3,-2,-1,1,2,3,4])) for x in raw]; base_m=int(round((h/w)*60)) if h>0 else 0; mins=[max(10,base_m+rng.randint(-15,14)) if base_m>30 else base_m for _ in range(w)]; res='$RESULTS'.split(','); missed=sum(cnts[idx] for idx,st in enumerate(res[:2]) if st!='success') if w==3 else 0; print(cnts[2]+missed, mins[2])")
+          echo "Wave 3: running $W_READERS readers over $W_MINS minutes (days left: ${TOTAL_DAYS:-1})"
           SPREAD_MINUTES="$W_MINS" ./run-camoufox.sh "${{ inputs.article_url }}" "$W_READERS" "${{ inputs.seconds }}"
 
   wave-4:
@@ -203,8 +209,8 @@ jobs:
       - name: Run Wave 4
         run: |
           chmod +x run-camoufox.sh
-          read W_READERS W_MINS < <(python3 -c "import math,random; rng=random.Random(int('${{ github.run_id }}')); r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; raw=[rng.uniform(0.58,1.48) for _ in range(w)]; s=sum(raw); cnts=[max(1,int(round(r*x/s))+rng.choice([-4,-3,-2,-1,1,2,3,4])) for x in raw]; base_m=int(round((h/w)*60)) if h>0 else 0; mins=[max(10,base_m+rng.randint(-15,14)) if base_m>30 else base_m for _ in range(w)]; print(cnts[3], mins[3])")
-          echo "Wave 4: running $W_READERS readers over $W_MINS minutes"
+          read W_READERS W_MINS < <(python3 -c "import math,random; rng=random.Random(int('${{ github.run_id }}')); tot_r=max(1,int('${TOTAL_READERS:-30}')); d=max(1,int(float('${TOTAL_DAYS:-1}'))); r=max(1,min(tot_r-(d-1),int(round((tot_r/d)*rng.uniform(0.76,1.28)))+rng.choice([-3,-2,-1,1,2,3]))) if d>1 else tot_r; h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; raw=[rng.uniform(0.58,1.48) for _ in range(w)]; s=sum(raw); cnts=[max(1,int(round(r*x/s))+rng.choice([-4,-3,-2,-1,1,2,3,4])) for x in raw]; base_m=int(round((h/w)*60)) if h>0 else 0; mins=[max(10,base_m+rng.randint(-15,14)) if base_m>30 else base_m for _ in range(w)]; print(cnts[3], mins[3])")
+          echo "Wave 4: running $W_READERS readers over $W_MINS minutes (days left: ${TOTAL_DAYS:-1})"
           SPREAD_MINUTES="$W_MINS" ./run-camoufox.sh "${{ inputs.article_url }}" "$W_READERS" "${{ inputs.seconds }}"
 
   wave-5:
@@ -229,8 +235,8 @@ jobs:
       - name: Run Wave 5
         run: |
           chmod +x run-camoufox.sh
-          read W_READERS W_MINS < <(python3 -c "import math,random; rng=random.Random(int('${{ github.run_id }}')); r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; raw=[rng.uniform(0.58,1.48) for _ in range(w)]; s=sum(raw); cnts=[max(1,int(round(r*x/s))+rng.choice([-4,-3,-2,-1,1,2,3,4])) for x in raw]; base_m=int(round((h/w)*60)) if h>0 else 0; mins=[max(10,base_m+rng.randint(-15,14)) if base_m>30 else base_m for _ in range(w)]; print(cnts[4], mins[4])")
-          echo "Wave 5: running $W_READERS readers over $W_MINS minutes"
+          read W_READERS W_MINS < <(python3 -c "import math,random; rng=random.Random(int('${{ github.run_id }}')); tot_r=max(1,int('${TOTAL_READERS:-30}')); d=max(1,int(float('${TOTAL_DAYS:-1}'))); r=max(1,min(tot_r-(d-1),int(round((tot_r/d)*rng.uniform(0.76,1.28)))+rng.choice([-3,-2,-1,1,2,3]))) if d>1 else tot_r; h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; raw=[rng.uniform(0.58,1.48) for _ in range(w)]; s=sum(raw); cnts=[max(1,int(round(r*x/s))+rng.choice([-4,-3,-2,-1,1,2,3,4])) for x in raw]; base_m=int(round((h/w)*60)) if h>0 else 0; mins=[max(10,base_m+rng.randint(-15,14)) if base_m>30 else base_m for _ in range(w)]; print(cnts[4], mins[4])")
+          echo "Wave 5: running $W_READERS readers over $W_MINS minutes (days left: ${TOTAL_DAYS:-1})"
           SPREAD_MINUTES="$W_MINS" ./run-camoufox.sh "${{ inputs.article_url }}" "$W_READERS" "${{ inputs.seconds }}"
 
   wave-6:
@@ -256,6 +262,31 @@ jobs:
         run: |
           chmod +x run-camoufox.sh
           RESULTS="${{ needs.wave-1.result }},${{ needs.wave-2.result }},${{ needs.wave-3.result }},${{ needs.wave-4.result }},${{ needs.wave-5.result }}"
-          read W_READERS W_MINS < <(python3 -c "import math,random; rng=random.Random(int('${{ github.run_id }}')); r=int('${TOTAL_READERS:-30}'); h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; raw=[rng.uniform(0.58,1.48) for _ in range(w)]; s=sum(raw); cnts=[max(1,int(round(r*x/s))+rng.choice([-4,-3,-2,-1,1,2,3,4])) for x in raw]; base_m=int(round((h/w)*60)) if h>0 else 0; mins=[max(10,base_m+rng.randint(-15,14)) if base_m>30 else base_m for _ in range(w)]; res='$RESULTS'.split(','); missed=sum(cnts[idx] for idx,st in enumerate(res[:w-1]) if st!='success'); print(cnts[5]+missed, mins[5])")
-          echo "Wave 6: running $W_READERS readers over $W_MINS minutes (earlier results: $RESULTS)"
+          read W_READERS W_MINS < <(python3 -c "import math,random; rng=random.Random(int('${{ github.run_id }}')); tot_r=max(1,int('${TOTAL_READERS:-30}')); d=max(1,int(float('${TOTAL_DAYS:-1}'))); r=max(1,min(tot_r-(d-1),int(round((tot_r/d)*rng.uniform(0.76,1.28)))+rng.choice([-3,-2,-1,1,2,3]))) if d>1 else tot_r; h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; raw=[rng.uniform(0.58,1.48) for _ in range(w)]; s=sum(raw); cnts=[max(1,int(round(r*x/s))+rng.choice([-4,-3,-2,-1,1,2,3,4])) for x in raw]; base_m=int(round((h/w)*60)) if h>0 else 0; mins=[max(10,base_m+rng.randint(-15,14)) if base_m>30 else base_m for _ in range(w)]; res='$RESULTS'.split(','); missed=sum(cnts[idx] for idx,st in enumerate(res[:w-1]) if st!='success'); print(cnts[5]+missed, mins[5])")
+          echo "Wave 6: running $W_READERS readers over $W_MINS minutes (earlier results: $RESULTS, days left: ${TOTAL_DAYS:-1})"
           SPREAD_MINUTES="$W_MINS" ./run-camoufox.sh "${{ inputs.article_url }}" "$W_READERS" "${{ inputs.seconds }}"
+
+  next-day:
+    name: Auto-Dispatch Next Day
+    needs: [wave-1, wave-2, wave-3, wave-4, wave-5, wave-6]
+    if: ${{ always() && !cancelled() && fromJSON(inputs.days || '1') > 1 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
+    steps:
+      - name: Trigger next day campaign with remaining readers
+        run: |
+          read REM_READERS REM_DAYS TODAY_SENT < <(python3 -c "import math,random; rng=random.Random(int('${{ github.run_id }}')); tot_r=max(1,int('${TOTAL_READERS:-30}')); d=max(1,int(float('${TOTAL_DAYS:-1}'))); r=max(1,min(tot_r-(d-1),int(round((tot_r/d)*rng.uniform(0.76,1.28)))+rng.choice([-3,-2,-1,1,2,3]))) if d>1 else tot_r; h=float('${TOTAL_HOURS:-0}'); w=max(1,min(6,int(math.ceil(h/4.0)))) if h>0 else 1; raw=[rng.uniform(0.58,1.48) for _ in range(w)]; s=sum(raw); cnts=[max(1,int(round(r*x/s))+rng.choice([-4,-3,-2,-1,1,2,3,4])) for x in raw]; sent=sum(cnts); rem_r=max(1,tot_r-sent); rem_d=max(1,d-1); print(rem_r, rem_d, sent)")
+          echo "Today sent $TODAY_SENT readers. Dispatching next day ($REM_DAYS days left, $REM_READERS readers remaining)..."
+          gh workflow run camoufox.yml --repo "${{ github.repository }}" \
+            -f article_url="${{ inputs.article_url }}" \
+            -f readers="$REM_READERS" \
+            -f concurrency="${{ inputs.concurrency }}" \
+            -f seconds="${{ inputs.seconds }}" \
+            -f traffic="${{ inputs.traffic }}" \
+            -f country="${{ inputs.country }}" \
+            -f bounce_pct="${{ inputs.bounce_pct }}" \
+            -f block_images="${{ inputs.block_images }}" \
+            -f hours="${{ inputs.hours }}" \
+            -f days="$REM_DAYS"
