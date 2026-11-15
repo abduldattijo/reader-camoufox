@@ -75,6 +75,12 @@ if [ "$PROXY_PROVIDER" != "none" ]; then
   fi
 fi
 
+if [ -n "${GITHUB_ACTIONS:-}" ]; then
+  echo "::add-mask::$URL"
+  SLUG="$(python3 -c "from urllib.parse import urlparse; p=urlparse('$URL').path.strip('/'); print(p)" 2>/dev/null || true)"
+  [ -n "$SLUG" ] && echo "::add-mask::$SLUG"
+fi
+
 echo "Proxy:       $PROXY_PROVIDER (country spec: $COUNTRY)"
 echo "Traffic:     $TRAFFIC"
 echo "Target:      $URL"

@@ -1,5 +1,4 @@
 name: camoufox-readers
-run-name: "camoufox [${{ inputs.article_url }}] (days left: ${{ inputs.days || '1' }})"
 
 on:
   workflow_dispatch:
