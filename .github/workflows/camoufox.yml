@@ -75,7 +75,7 @@ jobs:
           CUR_ID="${{ github.run_id }}"
           WAITED=0
           while [ "$WAITED" -lt 350 ]; do
-            ACTIVE=$(curl -s "https://api.github.com/repos/${{ github.repository }}/actions/runs?status=in_progress&per_page=20" | python3 -c "import sys,json; cur=int('$CUR_ID'); url='${{ inputs.article_url }}'.rstrip('/'); d=json.load(sys.stdin); earlier=[r for r in d.get('workflow_runs',[]) if int(r['id'])<cur]; same=[r['id'] for r in earlier if r.get('display_title','')=='camoufox-readers' or (url and url in r.get('display_title',''))]; busy=[r['id'] for r in earlier] if len(earlier)>=3 else []; b=same or busy; print(b[0] if b else '')" 2>/dev/null || true)
+            ACTIVE=$(curl -s "https://api.github.com/repos/${{ github.repository }}/actions/runs?status=in_progress&per_page=20" | python3 -c "import sys,json; cur=int('$CUR_ID'); d=json.load(sys.stdin); earlier=[r['id'] for r in d.get('workflow_runs',[]) if int(r['id'])<cur]; print(earlier[0] if len(earlier)>=3 else '')" 2>/dev/null || true)
             if [ -z "$ACTIVE" ]; then
               echo "No conflicting run in progress. Proceeding."
               break
@@ -97,7 +97,7 @@ jobs:
           CUR_ID="${{ github.run_id }}"
           WAITED=0
           while [ "$WAITED" -lt 350 ]; do
-            ACTIVE=$(curl -s "https://api.github.com/repos/${{ github.repository }}/actions/runs?status=in_progress&per_page=20" | python3 -c "import sys,json; cur=int('$CUR_ID'); url='${{ inputs.article_url }}'.rstrip('/'); d=json.load(sys.stdin); earlier=[r for r in d.get('workflow_runs',[]) if int(r['id'])<cur]; same=[r['id'] for r in earlier if r.get('display_title','')=='camoufox-readers' or (url and url in r.get('display_title',''))]; busy=[r['id'] for r in earlier] if len(earlier)>=3 else []; b=same or busy; print(b[0] if b else '')" 2>/dev/null || true)
+            ACTIVE=$(curl -s "https://api.github.com/repos/${{ github.repository }}/actions/runs?status=in_progress&per_page=20" | python3 -c "import sys,json; cur=int('$CUR_ID'); d=json.load(sys.stdin); earlier=[r['id'] for r in d.get('workflow_runs',[]) if int(r['id'])<cur]; print(earlier[0] if len(earlier)>=3 else '')" 2>/dev/null || true)
             if [ -z "$ACTIVE" ]; then
               echo "No conflicting run in progress. Starting campaign now."
               break
