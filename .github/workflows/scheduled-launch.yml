@@ -1,0 +1,30 @@
+name: scheduled-launch
+
+on:
+  schedule:
+    - cron: '15 18 24 11 *'
+
+jobs:
+  launch:
+    if: ${{ secrets.NEXT_ARTICLE_URL != '' }}
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
+    steps:
+      - name: Launch scheduled 8-day follow-up campaign (Nov 24, 2026)
+        run: |
+          if [ "$(date -u +%Y)" != "2026" ]; then
+            echo "Not 2026 — skipping."
+            exit 0
+          fi
+          gh workflow run camoufox.yml --repo "${{ github.repository }}" \
+            -f article_url="${{ secrets.NEXT_ARTICLE_URL }}" \
+            -f readers="4000" \
+            -f concurrency="20" \
+            -f seconds="300" \
+            -f traffic="mix" \
+            -f country="auto" \
+            -f bounce_pct="0.20" \
+            -f block_images="1" \
+            -f hours="24" \
+            -f days="8"
